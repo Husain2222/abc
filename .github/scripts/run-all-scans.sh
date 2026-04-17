@@ -21,6 +21,7 @@ ZAP_RESULT="skipped"
 IMPORT_COUNT=0
 FINAL_FORMAT="none"
 DOJO_IMPORT_FAILED=false
+SONAR_PROJECT_KEY=""
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 mkdir -p "${REPORTS_DIR}"
@@ -423,6 +424,30 @@ do_import() {
     return 1
   fi
 }
+
+# ── Verify engagement exists and is active before importing ──────────────────
+log "Verifying engagement ${DEFECTDOJO_ENGAGEMENT_ID} in DefectDojo..."
+ENG_RESP=$(curl -s -w "\n%{http_code}" \
+  -H "Authorization: Token ${DEFECTDOJO_API_KEY}" \
+  "${DEFECTDOJO_URL}/api/v2/engagements/${DEFECTDOJO_ENGAGEMENT_ID}/")
+ENG_CODE=$(echo "${ENG_RESP}" | tail -1)
+ENG_BODY=$(echo "${ENG_RESP}" | head -n -1)
+
+if [ "${ENG_CODE}" = "200" ]; then
+  ENG_STATUS=$(echo "${ENG_BODY}" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "unknown")
+  ok "Engagement found (status: ${ENG_STATUS})"
+  # If engagement is not In Progress, patch it so imports are accepted
+  if [ "${ENG_STATUS}" != "In Progress" ]; then
+    log "Patching engagement to 'In Progress'..."
+    curl -s -o /dev/null -X PATCH \
+      -H "Authorization: Token ${DEFECTDOJO_API_KEY}" \
+      -H "Content-Type: application/json" \
+      -d '{"status":"In Progress"}' \
+      "${DEFECTDOJO_URL}/api/v2/engagements/${DEFECTDOJO_ENGAGEMENT_ID}/" || true
+  fi
+else
+  warn "Could not verify engagement (HTTP ${ENG_CODE}) — attempting import anyway"
+fi
 
 do_import \
   "${REPORTS_DIR}/sonarqube-report.json" \
