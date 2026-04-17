@@ -435,8 +435,10 @@ ENG_BODY=$(echo "${ENG_RESP}" | head -n -1)
 
 if [ "${ENG_CODE}" = "200" ]; then
   ENG_STATUS=$(echo "${ENG_BODY}" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "unknown")
-  ok "Engagement found (status: ${ENG_STATUS})"
-  # If engagement is not In Progress, patch it so imports are accepted
+  ENG_PRODUCT=$(echo "${ENG_BODY}" | grep -o '"product":[0-9]*' | head -1 | cut -d':' -f2 || echo "unknown")
+  ok "Engagement found (status: ${ENG_STATUS}, product_id: ${ENG_PRODUCT})"
+  log "DEBUG — DEFECTDOJO_PRODUCT_ID secret value: ${DEFECTDOJO_PRODUCT_ID}"
+  log "DEBUG — DEFECTDOJO_ENGAGEMENT_ID secret value: ${DEFECTDOJO_ENGAGEMENT_ID}"
   if [ "${ENG_STATUS}" != "In Progress" ]; then
     log "Patching engagement to 'In Progress'..."
     curl -s -o /dev/null -X PATCH \
@@ -445,9 +447,31 @@ if [ "${ENG_CODE}" = "200" ]; then
       -d '{"status":"In Progress"}' \
       "${DEFECTDOJO_URL}/api/v2/engagements/${DEFECTDOJO_ENGAGEMENT_ID}/" || true
   fi
+  # Warn if product_id in secret doesn't match the engagement's actual product
+  if [ "${ENG_PRODUCT}" != "${DEFECTDOJO_PRODUCT_ID}" ] && [ "${ENG_PRODUCT}" != "unknown" ]; then
+    warn "MISMATCH: engagement belongs to product ${ENG_PRODUCT} but DEFECTDOJO_PRODUCT_ID=${DEFECTDOJO_PRODUCT_ID}"
+    warn "Overriding product_id to match engagement..."
+    DEFECTDOJO_PRODUCT_ID="${ENG_PRODUCT}"
+  fi
 else
   warn "Could not verify engagement (HTTP ${ENG_CODE}) — attempting import anyway"
 fi
+
+# ── Test with minimal ZAP import first to isolate the 500 ────────────────────
+log "DEBUG — Testing DefectDojo import endpoint with minimal ZAP payload..."
+MINI_RESP=$(curl -s -w "\n%{http_code}" \
+  -X POST \
+  -H "Authorization: Token ${DEFECTDOJO_API_KEY}" \
+  -F "scan_date=${RUN_DATE}" \
+  -F "scan_type=ZAP Scan" \
+  -F "engagement=${DEFECTDOJO_ENGAGEMENT_ID}" \
+  -F "file=@${REPORTS_DIR}/zap-report.xml" \
+  -F "active=true" \
+  -F "verified=false" \
+  "${DEFECTDOJO_URL}/api/v2/import-scan/")
+MINI_CODE=$(echo "${MINI_RESP}" | tail -1)
+MINI_BODY=$(echo "${MINI_RESP}" | head -n -1)
+log "DEBUG — Minimal ZAP import response (HTTP ${MINI_CODE}): ${MINI_BODY}"
 
 do_import \
   "${REPORTS_DIR}/sonarqube-report.json" \
