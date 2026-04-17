@@ -403,6 +403,7 @@ do_import() {
     -F "scan_type=${SCAN_TYPE}" \
     -F "engagement=${DEFECTDOJO_ENGAGEMENT_ID}" \
     -F "product_id=${DEFECTDOJO_PRODUCT_ID}" \
+    -F "environment=Development" \
     -F "file=@${FILE}" \
     -F "close_old_findings=true" \
     -F "active=true" \
@@ -465,6 +466,7 @@ MINI_RESP=$(curl -s -w "\n%{http_code}" \
   -F "scan_date=${RUN_DATE}" \
   -F "scan_type=ZAP Scan" \
   -F "engagement=${DEFECTDOJO_ENGAGEMENT_ID}" \
+  -F "environment=Development" \
   -F "file=@${REPORTS_DIR}/zap-report.xml" \
   -F "active=true" \
   -F "verified=false" \
